@@ -162,7 +162,7 @@ if adtitle_analyze:
     coef = pipeline.named_steps['clf'].coef_
 
     # Get the feature names (words)
-    words = pipeline.named_steps['tfidf'].get_feature_names()
+    words = pipeline.named_steps['tfidf'].get_feature_names_out()
 
     # Create a DataFrame with words and coefficients
     word_coef = pd.DataFrame({'word': words, 'coef': coef})
