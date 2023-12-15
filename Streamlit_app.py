@@ -10,7 +10,7 @@ from sklearn.pipeline import Pipeline
 
 st.set_page_config(
     page_title="Ad data Analysis",
-    page_icon="📈",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
