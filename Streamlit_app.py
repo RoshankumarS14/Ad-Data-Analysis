@@ -16,6 +16,8 @@ st.set_page_config(
 )
 
 data = pd.read_excel("HeadlineData.xlsx")
+data = data[(data.Position=="Driver / Drivers") |  (data.Position=="Local City Driver/Forklift Operators") | (data.Position=="HE - Drivers")]
+data.drop(["Position"],axis=1,inplace=True)
 data.dropna(inplace=True)
 df = data.copy()
 
@@ -35,7 +37,6 @@ After setting your filters and sorting preferences, observe the updated dataset.
 
 
 ad_title = st.selectbox("Ad Title",np.concatenate([["All"],df["AdTitle"].unique()]))
-position = st.selectbox("Position",np.concatenate([["All"],df["Position"].unique()]))
 ad_state = st.selectbox("Ad State",np.concatenate([["All"],df["AdState"].unique()]))
 campaign = st.selectbox("Campaign Market",np.concatenate([["All"],df["CampaignMarket"].unique()]))
 cpl = st.slider("CPL",df["CPL"].min(),df["CPL"].max(),(25.0,500.0))
@@ -43,8 +44,6 @@ cpl = st.slider("CPL",df["CPL"].min(),df["CPL"].max(),(25.0,500.0))
 query = []
 if ad_title != "All":
     query.append("AdTitle==@ad_title")
-if position != "All":
-    query.append("Position==@position")
 if ad_state != "All":
     query.append("AdState==@ad_state")
 if campaign != "All":
@@ -72,7 +71,6 @@ Welcome to our CPL prediction tool! This component employs machine learning to f
 """)
 
 ad_title = st.selectbox("Ad Title",df["AdTitle"].unique())
-position = st.selectbox("Position",df["Position"].unique())
 ad_state = st.selectbox("Ad State",df["AdState"].unique())
 campaign = st.selectbox("Campaign Market",df["CampaignMarket"].unique())
 
@@ -87,7 +85,7 @@ for index in df.index:
     if df.loc[index,"CPL"]>ul:
         df.loc[index,"CPL"]=ul
 
-cat_cols = ["CampaignMarket","AdState","Position","AdTitle"]  # replace with your actual column names
+cat_cols = ["CampaignMarket","AdState","AdTitle"]  # replace with your actual column names
 
 encoder = TargetEncoder()
 values = encoder.fit_transform(df[cat_cols], df['CPL'])
@@ -98,17 +96,17 @@ X = df[cat_cols]
 y = df["CPL"]
 gb = GradientBoostingRegressor().fit(X,y)
 
-input = encoder.transform(pd.DataFrame({"CampaignMarket":campaign,"AdState":ad_state,"Position":position,"AdTitle":ad_title},index=[0]))
+input = encoder.transform(pd.DataFrame({"CampaignMarket":campaign,"AdState":ad_state,"AdTitle":ad_title},index=[0]))
 
 if predict:
     st.subheader("Prediction results")
     st.write("Campaign Market : "+campaign)
     st.write("Ad State : "+ad_state)
-    st.write("Position : "+position)
+    st.write("Position : Driver")
     st.write("Ad Title : "+ad_title)
     st.write("CPL : "+str(gb.predict(input)[0]))
 
-st.header("Text Analysis of Ad Title")
+st.header("Analysis of impact of Ad Title on CPL")
 
 st.write("""
 Welcome to our Ad Title Analysis tool! This component utilizes Natural Language Processing (NLP) techniques to analyze the impact of words within ad titles on the Cost Per Lead (CPL) values. By breaking down ad titles into individual words and computing coefficients, this tool provides insights into the significance of each word in influencing CPL.
@@ -123,14 +121,11 @@ Welcome to our Ad Title Analysis tool! This component utilizes Natural Language 
 **Utilize Insights:** Incorporate the insights gained from coefficient analysis into your advertising strategies. Optimize ad titles by emphasizing words positively correlated with CPL and possibly avoiding or adjusting those with negative correlations.                 
 """)
 
-position_text = st.selectbox("Position",np.concatenate([["All"],data["Position"].unique()]),key="text1")
 ad_state_text = st.selectbox("Ad State",np.concatenate([["All"],data["AdState"].unique()]),key="text2")
 campaign_text = st.selectbox("Campaign Market",np.concatenate([["All"],data["CampaignMarket"].unique()]),key="text3")
 cpl_text = st.slider("CPL",data["CPL"].min(),data["CPL"].max(),(data["CPL"].min(),data["CPL"].max()),key="text4")
 
 text_query = []
-if position_text != "All":
-    text_query.append("Position==@position_text")
 if ad_state_text != "All":
     text_query.append("AdState==@ad_state_text")
 if campaign_text != "All":
@@ -140,23 +135,27 @@ text_query.append("CPL>=@cpl_text[0] & CPL<=@cpl_text[1]")
 text_query = " & ".join(text_query)
 df_filte_text = data.query(text_query)
 
-adtitle_analyze = st.button("Analyze Ad Title")
+if len(df_filte_text)==0:
+    st.write("Applied filter has no records in the table")
+
+adtitle_analyze = st.button("Generate report")
+
+# Assuming df is your DataFrame and it has columns 'AdTitle' and 'CPL'
+df_filte_text['AdTitle'] = df_filte_text['AdTitle'].str.lower() # Convert to lowercase
+
+X_text = df_filte_text['AdTitle']
+y_text = df_filte_text['CPL']
+
+# Create a pipeline that converts words to TF-IDF vectors, then applies linear regression
+pipeline = Pipeline([
+    ('tfidf', TfidfVectorizer(stop_words='english')),
+    ('clf', LinearRegression()),
+])
+
+# Train the model
+pipeline.fit(X_text, y_text)
 
 if adtitle_analyze:
-    # Assuming df is your DataFrame and it has columns 'AdTitle' and 'CPL'
-    df_filte_text['AdTitle'] = df_filte_text['AdTitle'].str.lower() # Convert to lowercase
-
-    X_text = df_filte_text['AdTitle']
-    y_text = df_filte_text['CPL']
-
-    # Create a pipeline that converts words to TF-IDF vectors, then applies linear regression
-    pipeline = Pipeline([
-        ('tfidf', TfidfVectorizer(stop_words='english')),
-        ('clf', LinearRegression()),
-    ])
-
-    # Train the model
-    pipeline.fit(X_text, y_text)
 
     # Now you can inspect the coefficients of the model
     coef = pipeline.named_steps['clf'].coef_
@@ -168,9 +167,40 @@ if adtitle_analyze:
     word_coef = pd.DataFrame({'word': words, 'coef': coef})
 
     # Sort the DataFrame by coefficient value in descending order
-    word_coef = word_coef.sort_values(by='coef', ascending=False)
+    word_coef = word_coef.sort_values(by='coef')
     word_coef.columns=["Words","Coefficients"]
 
     st.dataframe(word_coef)
+
+st.header("Text Analysis of Ad Title")
+
+st.write("""
+Welcome to our Ad Title Analysis tool! This component employs Natural Language Processing (NLP) techniques to evaluate ad titles entered by users. By analyzing individual words within the title, it generates a rating on a scale of 0 to 100. A higher rating suggests a potentially lower Cost Per Lead (CPL), while a lower rating implies a higher CPL.
+                  
+**Instructions** 
+1. **Enter Ad Title:** Input your ad title into the provided text field. This title will undergo NLP analysis to generate the CPL rating.
+2. **Initiate Analysis:** Trigger the analysis process after entering the ad title. The NLP algorithm will scrutinize each word within the title to compute a CPL rating based on its content and language characteristics.
+3. **Review CPL Rating:** Once the analysis is complete, the tool will display a CPL rating between 0 and 100. A higher rating indicates that the words used in the ad title are potentially associated with a lower CPL, while a lower rating suggests the opposite.         
+4. **Interpret the Rating:** Use the generated CPL rating as a guideline. Higher-rated ad titles might correlate with better CPL outcomes, while lower-rated titles might need optimization to improve CPL performance.
+5. **Modify and Experiment:** Try altering the ad title and observe how it affects the CPL rating. Experimentation allows you to refine the title for potentially improved CPL outcomes.
+
+**Apply Insights:** Utilize the insights derived from the CPL rating to optimize your ad titles. Adjust the wording and structure to potentially enhance CPL performance based on the analysis.""")
+
+title = st.text_input("Ad Title")
+adtitle_rate = st.button("Rate your Ad Title!")
+
+if adtitle_rate:
+    predicted_cpl = pipeline.predict([title])
+    st.write("Predicted CPL with the entered Ad Title: ",str(predicted_cpl[0]))
+    if predicted_cpl>100:
+        rating=0
+    elif predicted_cpl<0:
+        rating=100
+    else:
+        rating = int(100-predicted_cpl)
+    st.write("Ad Title Rating : ",str(rating),"/100")
+    if rating==100:
+        st.warning("Note! The higher rating might be because of usage of words which are not familiar to the model.")
+
 
 
