@@ -7,6 +7,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+import plotly.graph_objects as go
 
 st.set_page_config(
     page_title="Ad data Analysis",
