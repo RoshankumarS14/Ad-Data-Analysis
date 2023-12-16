@@ -5,9 +5,10 @@ from category_encoders import TargetEncoder
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-# import plotly.graph_objects as go
+import plotly.graph_objects as go
+import plotly.express as px 
+from sklearn.feature_selection import SelectFromModel
 
 st.set_page_config(
     page_title="Ad data Analysis",
@@ -150,27 +151,28 @@ y_text = df_filte_text['CPL']
 # Create a pipeline that converts words to TF-IDF vectors, then applies linear regression
 pipeline = Pipeline([
     ('tfidf', TfidfVectorizer(stop_words='english')),
+    ('feature_selection', SelectFromModel(LinearRegression(), threshold=1e-5)),
     ('clf', LinearRegression()),
 ])
 
 # Train the model
 pipeline.fit(X_text, y_text)
 
+# Now you can inspect the coefficients of the model
+coef = pipeline.named_steps['clf'].coef_
+intercept = pipeline.named_steps['clf'].intercept_
+
+# Get the feature names (words)
+words = pipeline.named_steps['tfidf'].get_feature_names_out()
+
+# Create a DataFrame with words and coefficients
+word_coef = pd.DataFrame({'word': words, 'coef': coef})
+
+# Sort the DataFrame by coefficient value in descending order
+word_coef = word_coef.sort_values(by='coef')
+word_coef.columns=["Words","Coefficients"]
+
 if adtitle_analyze:
-
-    # Now you can inspect the coefficients of the model
-    coef = pipeline.named_steps['clf'].coef_
-
-    # Get the feature names (words)
-    words = pipeline.named_steps['tfidf'].get_feature_names_out()
-
-    # Create a DataFrame with words and coefficients
-    word_coef = pd.DataFrame({'word': words, 'coef': coef})
-
-    # Sort the DataFrame by coefficient value in descending order
-    word_coef = word_coef.sort_values(by='coef')
-    word_coef.columns=["Words","Coefficients"]
-
     st.dataframe(word_coef)
 
 st.header("Text Analysis of Ad Title")
@@ -192,16 +194,154 @@ adtitle_rate = st.button("Rate your Ad Title!")
 
 if adtitle_rate:
     predicted_cpl = pipeline.predict([title])
-    st.write("Predicted CPL with the entered Ad Title: ",str(predicted_cpl[0]))
-    if predicted_cpl>100:
+    # st.write("Predicted CPL with the entered Ad Title: ",str(predicted_cpl[0]))
+    if predicted_cpl==intercept:
+        rating=50
+    elif predicted_cpl>100:
         rating=0
     elif predicted_cpl<0:
         rating=100
     else:
         rating = int(100-predicted_cpl)
+
     st.write("Ad Title Rating : ",str(rating),"/100")
-    if rating==100:
-        st.warning("Note! The higher rating might be because of usage of words which are not familiar to the model.")
+    
+
+    # Define your values
+    current_price = rating
+    ask_price = 100
+    bid_price = 0
+    spread = 10
+
+    # Create the gauge chart
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Indicator(
+            mode="gauge+number+delta",
+            title={'text': "Rating"},
+            delta={'reference': ask_price, 'relative': False, 'increasing': {'color': "RebeccaPurple"}, 'decreasing': {'color': "RoyalBlue"}},
+            value=current_price,
+            domain={'x': [0, 1], 'y': [0, 1]},
+            gauge={
+                'shape': 'angular',
+                'axis': {'range': [bid_price - spread, ask_price + spread]},
+                'bar': {'color': "darkblue"},
+                'bgcolor': 'yellow',
+                'borderwidth': 2,
+                'bordercolor': 'black',
+                'steps': [
+                    {'range': [80, 100], 'color': 'green'},
+                    {'range': [0, 20], 'color': 'red'}
+                ],
+                'threshold': {
+                    'line': {'color': 'orange', 'width': 6},
+                    'thickness': 0.75,
+                    'value': current_price,
+                }
+            }
+        )
+    )
+
+    # Display the chart in Streamlit
+    st.plotly_chart(fig, use_container_width=True)
+
+st.header("Data Visualization")
+
+st.write("""
+Welcome to our Data Visualization Tool! This Streamlit component is designed to provide insightful visualizations based on your dataset. You can explore and interact with various charts and graphs to gain a better understanding of your data. Additionally, the tool offers filtering options, allowing you to refine the displayed visualizations based on specific criteria.
+                           
+**Instructions** 
+1. **Explore Visualization Options:** Explore the available visualization options. You might find charts like bar charts, pie charts.
+2. **Apply Filters (Optional):** Use the filtering options provided to refine the data displayed in the visualizations. Filters could include selecting specific columns, setting value ranges, or applying categorical filters to focus on particular subsets of the data.
+3. **Interact with Visualizations:** Engage with the visualizations by hovering over data points. This interaction can reveal specific details within the visual representation of your data.
+4. **Save or Export Results:** All the charts offer options to save or export the visualizations. This could be helpful for presentations, reports, or further analysis outside of the tool.       
+
+**Apply Insights:** Utilize the insights derived from the CPL rating to optimize your ad. 
+       """)
 
 
+ad_state_chart = st.selectbox("Ad State",np.concatenate([["All"],data["AdState"].unique()]),key="key 5")
+campaign_chart = st.selectbox("Campaign Market",np.concatenate([["All"],data["CampaignMarket"].unique()]),key="key 6")
+cpl_chart = st.slider("CPL",data["CPL"].min(),data["CPL"].max(),(25.0,500.0),key="key 7")
 
+chart_query = []
+if ad_state_chart != "All":
+    chart_query.append("AdState==@ad_state_chart")
+if campaign_chart != "All":
+    chart_query.append("CampaignMarket==@campaign_chart")
+chart_query.append("CPL>=@cpl_chart[0] & CPL<=@cpl_chart[1]")
+
+chart_query = " & ".join(chart_query)
+df_filter_chart = data.query(chart_query)
+
+min_cpl = df_filter_chart["CPL"].min()
+max_cpl = df_filter_chart["CPL"].max()
+avg_cpl = round(df_filter_chart["CPL"].mean(),2)
+no_of_jobs = len(df_filter_chart)
+
+c1,c2,c3 = st.columns(3)
+
+with c1:
+    st.subheader("Average CPL:")
+    st.subheader(f"US $ {avg_cpl:,}")
+with c2:
+    st.subheader("Minimum CPL:")
+    st.subheader(f"US $ {min_cpl:,}")
+with c3:
+    st.subheader("Maximum CPL:")
+    st.subheader(f"US $ {max_cpl:,}")
+
+st.markdown("---")
+
+df_cpl_state = pd.pivot_table(data=df_filter_chart,index="AdState",values="CPL").sort_values("CPL")
+df_cpl_campaign = pd.pivot_table(data=df_filter_chart,index="CampaignMarket",values="CPL").sort_values("CPL")
+
+if len(df_filter_chart)==0:
+    st.warning("The applied filter has no records!")
+    
+else:
+    
+    fig_cpl_state = px.bar(
+            df_cpl_state,
+            x=df_cpl_state.index,
+            y="CPL",
+            orientation="v",
+            title = "<b>Average CPL of all states</b>",
+            color_discrete_sequence=["#0083B8"]*len(df_cpl_state),
+            template = "plotly_white",
+        )
+    
+    fig_cpl_campaign = px.bar(
+        df_cpl_campaign,
+        x=df_cpl_campaign.index,
+        y="CPL",
+        orientation="v",
+        title = "<b>Average CPL of all Campaign Markets</b>",
+        color_discrete_sequence=["#0083B8"]*len(df_cpl_state),
+        template = "plotly_white",
+    )
+
+    c4,c5 = st.columns(2)
+
+    with c4:
+        st.plotly_chart(fig_cpl_state)
+    
+    with c5:
+        st.plotly_chart(fig_cpl_campaign)
+
+    st.markdown("---")
+
+    c6,c7 = st.columns(2)
+
+    with c6:
+        st.subheader("Ad State Distribution")
+        fig = px.pie(df_filter_chart, values = "CPL", names = "AdState", hole = 0.5)
+        fig.update_traces(text = df_filter_chart["AdState"], textposition = "outside")
+        st.plotly_chart(fig,use_container_width=True)
+
+    with c7:
+        st.subheader("Campaign Market Distribution")
+        fig = px.pie(df_filter_chart, values = "CPL", names = "CampaignMarket", hole = 0.5)
+        fig.update_traces(text = df_filter_chart["CampaignMarket"], textposition = "outside")
+        st.plotly_chart(fig,use_container_width=True)
